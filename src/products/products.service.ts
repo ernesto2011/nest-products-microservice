@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PrismaClient } from '@prisma/client';
@@ -20,7 +20,7 @@ export class ProductsService extends PrismaClient implements OnModuleInit {
 
   async findAll(paginationDto: PaginationDto) {
     const { page, limit } = paginationDto;
-    const totalRegisters = await this.product.count();
+    const totalRegisters = await this.product.count({where: { available: true }});
     const lastPage = Math.ceil(totalRegisters / limit!);
     if(page! > lastPage) {
       return {
@@ -30,6 +30,7 @@ export class ProductsService extends PrismaClient implements OnModuleInit {
     }
     return {
       data: await this.product.findMany({
+        where: { available: true },
         skip: (page! - 1) * limit!,
         take: limit
       }),
@@ -40,23 +41,31 @@ export class ProductsService extends PrismaClient implements OnModuleInit {
     }
   }
 
-  findOne(id: number) {
-    const product = this.product.findUnique({
-      where: { id }
+  async findOne(id: number) {
+    const product = await this.product.findUnique({
+      where: { id, available: true }
     });
     if(!product) {
-      return {
-        message: 'Product not found',
-      }
+      throw new NotFoundException(`Product with id ${id} not found`);
     }
     return product;
   }
-s
-  update(id: number, updateProductDto: UpdateProductDto) {
-    return `This action updates a #${id} product`;
+  async update(id: number, updateProductDto: UpdateProductDto) {
+    const { id: _, ...data } = updateProductDto;
+    
+    await this.findOne(id);
+
+    return await this.product.update({
+      where: { id },
+      data: data
+    });
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} product`;
+  async remove(id: number) {
+    await this.findOne(id);
+    await this.product.update({
+      where: { id },
+      data: { available: false }
+    })
   }
 }
